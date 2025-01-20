@@ -1,0 +1,25 @@
+
+config natmap
+	option udp_mode '0'
+	option stun_server 'turn.cloudflare.com'
+	option http_server 'qq.com'
+	option port '18080'
+	option family 'ipv4'
+	option interface 'wan'
+	option forward_target '127.0.0.1'
+	option forward_port '8080'
+	option notify_script '/etc/natmap/natmap_callback.sh'
+	option enable '1'
+
+config natmap
+	option udp_mode '0'
+	option stun_server 'turn.cloudflare.com'
+	option http_server 'qq.com'
+	option port '20809'
+	option family 'ipv4'
+	option forward_target '127.0.0.1'
+	option forward_port '10809'
+	option interface 'wan'
+	option notify_script '/etc/natmap/natmap_notify_only.sh'
+	option enable '1'
+
