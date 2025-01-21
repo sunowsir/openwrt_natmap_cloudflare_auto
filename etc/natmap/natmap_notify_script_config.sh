@@ -31,8 +31,11 @@ RETRY_NUM=20
 # server 酱通知
 SENDKEY=''
 
-# 日志保存时常，默认两小时（单位：秒）
+# 日志保存时长，默认两小时（单位：秒）
+# 注意：每次脚本执行前判断删除，而不是循环定时删除
 LOGS_SAVE_TIMES="$((2 * 60 * 60))"
+# 日志保存路径
+LOGS_SAVE_DIR="/tmp"
 
 # 如下方括号中的key,填写natmap配置文件/etc/config/natmap中的：
 # option port '20809' 配置项目中的端口号

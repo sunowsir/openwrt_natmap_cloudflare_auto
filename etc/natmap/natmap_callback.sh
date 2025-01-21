@@ -12,9 +12,11 @@ WORK_DIR="$(dirname $(readlink -f "${0}"))"
 source "${WORK_DIR}/natmap_notify_script_config.sh"
 
 TMP_DIR="/tmp"
-
 LOCK_FILE="${TMP_DIR}/.openwrt.natmap.callback.script.lock"
-LOG_FILE="${TMP_DIR}/.openwrt.natmap.callback.script.log"
+
+mkdir -p ${LOGS_SAVE_DIR}
+LOG_FILE="${LOGS_SAVE_DIR}/.openwrt.natmap.callback.script.log"
+
 WORK_SH_FILE="natmap_after_setup.sh"
 
 FILE_IDLE="$(( $(date '+%s') - $(date -r "${LOG_FILE}" '+%s' 2>/dev/null || echo '0') ))"
