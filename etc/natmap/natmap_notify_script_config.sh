@@ -31,6 +31,9 @@ RETRY_NUM=20
 # server 酱通知
 SENDKEY=''
 
+# 日志保存时常，默认两小时（单位：秒）
+LOGS_SAVE_TIMES="$((2 * 60 * 60))"
+
 # 如下方括号中的key,填写natmap配置文件/etc/config/natmap中的：
 # option port '20809' 配置项目中的端口号
 # 如下双引号中的value, 填写子域名名称，例如blog.yl0618.tech中的blog
