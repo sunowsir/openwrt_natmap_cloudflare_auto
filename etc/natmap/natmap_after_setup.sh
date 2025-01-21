@@ -8,8 +8,7 @@
 
 set -x
 
-WORK_DIR="/etc/natmap"
-
+WORK_DIR="$(dirname $(readlink -f "${0}"))"
 source "${WORK_DIR}/natmap_notify_script_config.sh"
 
 function sc_send_proc() {
@@ -213,9 +212,12 @@ function firewall_rules_add() {
 }
 
 function main() {
-    sc_send ${@}
     redirect_rule_setup ${@} || exit $?
-    firewall_rules_add ${@}
+    firewall_rules_add ${@} || exit $?
+
+    # 只有成功才发通知
+    sc_send ${@}
+
     return $?
 }
 

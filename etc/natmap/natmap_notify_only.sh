@@ -6,6 +6,7 @@
 #       * Github   : github.com/sunowsir
 #       * Creation : Fri 19 Dec 2024 19:21:47 PM CST
 
+WORK_DIR="$(dirname $(readlink -f "${0}"))"
 source "${WORK_DIR}/natmap_notify_script_config.sh"
 
 Natmap_addr="${1}"
