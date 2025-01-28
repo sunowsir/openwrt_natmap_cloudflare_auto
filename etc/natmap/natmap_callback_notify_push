@@ -1,0 +1,38 @@
+#!/bin/bash
+#
+#       * File     : natmap_callback_notify_push
+#       * Author   : sunowsir
+#       * Mail     : sunowsir@163.com
+#       * Github   : github.com/sunowsir
+
+set -x
+
+WORK_DIR="$(dirname $(readlink -f "${0}"))"
+source "${WORK_DIR}/natmap_notify_script_config.sh"
+
+function sc_send_proc() {
+    local text=$1
+    local desp=$2
+    local key=$3
+
+    local postdata="text=$text&desp=$desp"
+    local opts=(
+        "--header" "Content-type: application/x-www-form-urlencoded"
+        "--data" "$postdata"
+    )
+
+    # 判断 key 是否以 "sctp" 开头，选择不同的 URL
+    local url="https://sctapi.ftqq.com/${key}.send"
+    if [[ "$key" =~ ^sctp([0-9]+)t ]]; then
+        # 使用正则表达式提取数字部分
+        local num=${BASH_REMATCH[1]}
+        url="https://${num}.push.ft07.com/send/${key}.send"
+    fi
+
+
+    # 使用动态生成的 url 发送请求
+    local result=$(curl -X POST -s -o /dev/null -w "%{http_code}" "$url" "${opts[@]}")
+    echo "$result"
+}
+
+set +x
