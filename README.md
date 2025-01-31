@@ -6,7 +6,7 @@
     > 2. !!! 稳妥起见，请仅修改配置文件`natmap_callback.config`，其他勿动
     > 3. 配置文件中的AUTH ZONE 等相关cloudflare的账户认证ID以及其他配置必须全部填写完毕才能正常使用，具体获取方式见鸣谢博客教程以及配置文件`natmap_callback.config`注释
 
-    1. 支持自动增加或修改 cloudflare DNS记录，若已存在记录则修改，否则新增
+    1. 支持自动增加或修改 cloudflare DNS记录（访问域名，而不是转发域名），若已存在记录则修改，否则新增
     2. 支持发送server chan通知
     3. 支持增加openwrt防火墙规则
     4. 支持增加或修改cloudflare转发规则，若存在重复规则则修改，否则新增
