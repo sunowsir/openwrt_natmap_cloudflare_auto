@@ -1,4 +1,15 @@
 #!/bin/bash
+#       * File     : natmap_callback
+#       * Author   : sunowsir
+#       * Mail     : sunowsir@163.com
+#       * Github   : github.com/sunowsir
+#       * Creation : Fri 20 Dec 2024 04:02:21 PM CST
+#
+#       Copyright (C) 2008-2019 sunowsir
+#
+#       This is free software, licensed under the AGPL-3.0 license .
+#
+
 
 set -x
 

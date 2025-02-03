@@ -11,6 +11,21 @@
     3. 支持增加openwrt防火墙规则
     4. 支持增加或修改cloudflare转发规则，若存在重复规则则修改，否则新增
     5. 支持未在配置文件中配置子域名时仅发送server chan通知
+    6. natmap 配置例如：
+    ``` txt
+    config natmap
+        option udp_mode '0'
+        option stun_server 'turn.cloudflare.com'
+        option http_server 'qq.com'
+        option port '18080'
+        option family 'ipv4'
+        option interface 'wan'
+        option forward_target '127.0.0.1'
+        option forward_port '8080'
+        option notify_script '/etc/natmap_callback/natmap_callback'
+        option enable '1'
+
+    ```
 
 * ddns 请自行解决，使用luci-app-ddns或luci-app-ddns-go或者其他脚本或插件
 
