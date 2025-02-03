@@ -1,10 +1,11 @@
 # openwrt natmap 通知及自动配置脚本
 * 端口号变更后自动更新cloudflare 301 转发规则并发送server酱通知
 
-    > 1. natmap 脚本运行时，请勿删除flock锁文件
+    > 1. 使用前请仔仔细细阅读如下鸣谢第二条博客，本项目由该博客启发而来
+    > 2. natmap 脚本运行时，请勿删除flock锁文件
     > 否则可能会导致脚本执行冲突导致规则更新冲突
-    > 2. !!! 稳妥起见，请仅修改配置文件`/etc/config/natmap_callback`，其他勿动
-    > 3. 配置文件中的AUTH ZONE 等相关cloudflare的账户认证ID以及其他配置必须全部填写完毕才能正常使用，具体获取方式见鸣谢博客教程以及配置文件`natmap_callback.config`注释
+    > 3. !!! 稳妥起见，请仅修改配置文件`/etc/config/natmap_callback`，其他勿动
+    > 4. 配置文件中的AUTH ZONE 等相关cloudflare的账户认证ID以及其他配置必须全部填写完毕才能正常使用，具体获取方式见鸣谢博客教程以及配置文件`natmap_callback.config`注释
 
     1. 支持自动增加或修改 cloudflare DNS记录（访问域名，而不是转发域名），若已存在记录则修改，否则新增
     2. 支持发送server chan通知
@@ -27,7 +28,7 @@
 
     ```
 
-* ddns 请自行解决，使用luci-app-ddns或luci-app-ddns-go或者其他脚本或插件
+* 转发域名的 `ddns` 请自行解决（懒得搞，改天的吧），使用luci-app-ddns或luci-app-ddns-go或者其他脚本或插件
 
 ---
 
