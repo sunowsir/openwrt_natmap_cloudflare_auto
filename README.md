@@ -3,7 +3,7 @@
 
     > 1. natmap 脚本运行时，请勿删除flock锁文件
     > 否则可能会导致脚本执行冲突导致规则更新冲突
-    > 2. !!! 稳妥起见，请仅修改配置文件`natmap_callback.config`，其他勿动
+    > 2. !!! 稳妥起见，请仅修改配置文件`/etc/config/natmap_callback`，其他勿动
     > 3. 配置文件中的AUTH ZONE 等相关cloudflare的账户认证ID以及其他配置必须全部填写完毕才能正常使用，具体获取方式见鸣谢博客教程以及配置文件`natmap_callback.config`注释
 
     1. 支持自动增加或修改 cloudflare DNS记录（访问域名，而不是转发域名），若已存在记录则修改，否则新增

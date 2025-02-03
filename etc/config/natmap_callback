@@ -1,0 +1,40 @@
+#	* File     : natmap_callback
+#	* Author   : sunowsir
+#	* Mail     : sunowsir@163.com
+#	* Github   : github.com/sunowsir
+#	* Creation : Fri 20 Dec 2024 04:02:21 PM CST
+
+# 教程: https://blog.dibin.eu.org/posts/%E5%9C%A8NAT-1%E5%86%85%E7%BD%91IP%E5%AE%BD%E5%B8%A6%E4%B8%8A%E9%83%A8%E7%BD%B2Web%E6%9C%8D%E5%8A%A1%E5%B9%B6%E4%BD%BF%E7%94%A8Cloudflare%E8%BF%9B%E8%A1%8C%E9%87%8D%E5%AE%9A%E5%90%91/
+
+config natmap_callback 'cloudflare'
+    # 域名ZONE_ID， 在你的域名概览页面左下角可以找到 区域 ID 字样,复制下来并填入
+    option ZONE '' 
+    # 账户邮箱
+    option EMAIL ''
+       #  Cloudflare API
+    option AUTH ''
+    # cloudflare api url 前段公共部分
+    option CLOUDFLARE_API_URL ''
+    # 注册域名
+    option ROOT_DOMAIN ''
+    # 转发子域名
+    option REDIRECT_SUBDOMAIN ''
+    # 重试次数
+    option RETRY_NUM 3
+    # server 酱通知 KEY
+    option SENDKEY ''
+    # 日志保存时长，默认两小时（单位：秒）
+    # 注意：每次脚本执行前判断删除，而不是循环定时删除
+    option LOGS_SAVE_TIMES '86400'
+    # 日志保存路径
+    option LOGS_SAVE_DIR '/var/log/'
+    # 日志文件名
+    option LOGS_FILENAME 'natmap_callback.log'
+
+#  port 填写natmap配置文件/etc/config/natmap中的：
+# option port '20809' 配置项目中的端口号，
+# name则是访问域名的子域名，例如blog.yl0618.tech中的blog，
+config callback_subdomain 
+    option name 'blog'
+    option port '28090'
+
