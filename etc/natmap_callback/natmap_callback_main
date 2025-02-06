@@ -5,12 +5,6 @@
 #       * Mail     : sunowsir@163.com
 #       * Github   : github.com/sunowsir
 #       * Creation : Fri 20 Dec 2024 01:24:17 PM CST
-#
-#       Copyright (C) 2008-2019 sunowsir
-#
-#       This is free software, licensed under the AGPL-3.0 license .
-#
-
 
 set -x
 
@@ -43,9 +37,17 @@ function sc_send() {
 
 # 获取现有规则列表
 function currlent_rules_get() {
-    local current_rules=$(curl -s -X GET "${CLOUDFLARE_API_URL}/rulesets/${RULE}" \
-        -H "Authorization: Bearer ${AUTH}" \
-        -H "Content-Type: application/json" | jq '.result.rules')
+    local current_rules=""
+
+    for ((i = 0; i < ${RETRY_NUM}; i++)); do
+        current_rules=$(curl -s -X GET "${CLOUDFLARE_API_URL}/rulesets/${RULE}" \
+            -H "Authorization: Bearer ${AUTH}" \
+            -H "Content-Type: application/json" | jq '.result.rules')
+
+        if [[ ${?} -eq 0 ]]; then
+            break;
+        fi
+    done
 
     echo "${current_rules}"
 }
@@ -91,10 +93,17 @@ function same_rules_check() {
 function push_new_rules() {
     local updated_rules="${1}"
 
-    curl -X PUT "${CLOUDFLARE_API_URL}/rulesets/${RULE}" \
+    local response=$(curl -X PUT "${CLOUDFLARE_API_URL}/rulesets/${RULE}" \
         -H "Authorization: Bearer ${AUTH}" \
         -H "Content-Type: application/json" \
-        --data "{\"name\":\"default\",\"kind\":\"zone\",\"phase\":\"http_request_dynamic_redirect\",\"rules\":${updated_rules}}" 
+	--data "{\"name\":\"default\",\"kind\":\"zone\",\"phase\":\"http_request_dynamic_redirect\",\"rules\":${updated_rules}}")
+
+    # 解析 API 响应
+    local success=$(echo "${response}" | jq -r '.success')
+    if [[ "${success}" != "true" ]]; then
+        echo "提交规则失败: ${response}"
+        return 127
+    fi
     
     return $?
 }
@@ -134,19 +143,27 @@ function access_domain_dns_records_add() {
     local public_ipv4="${1}"
     local private_port="${4}"
 
-    record_check "${SERVICE_SUB_DOMAIN_DIC[${private_port}]}.${ROOT_DOMAIN}" "${public_ipv4}"
+    for ((i = 0; i < ${RETRY_NUM}; i++)); do
+        record_check "$(uci -q get "natmap_callback.${private_port}").${ROOT_DOMAIN}" "${public_ipv4}"
+
+        if [[ ${?} -eq 0 ]]; then
+            break;
+        fi
+    done
 
     return $?
 }
 
 # 转发规则设置 
 function redirect_rule_setup() {
+    echo "redirect_rule_setup: ${@}"
+
     local public_ipv4="${1}"
     local public_port="${2}"
     local private_ipv4="${6}"
     local protocol="${5}"
     local private_port="${4}"
-    local sub_domain="${SERVICE_SUB_DOMAIN_DIC[${private_port}]}"
+    local sub_domain="$(uci -q get "natmap_callback.${private_port}")"
 
     # redirect_domain_dns_records "${public_ipv4}" 
     redirect_rule_setup_proc "${public_ipv4}" "${public_port}" "${sub_domain}" 
@@ -189,6 +206,7 @@ function setup_failed() {
 
 # 检查是否存在子域名配置，若不存在则仅通知，然后直接退出脚本
 function redirect_domain_check() {
+    echo "redirect_domain_check: ${@}"
     local public_ipv4="${1}"
     local public_port="${2}"
     local private_ipv4="${6}"
@@ -200,7 +218,7 @@ function redirect_domain_check() {
         return -1
     fi
 
-    local sub_domain="${SERVICE_SUB_DOMAIN_DIC[${private_port}]}"
+    local sub_domain="$(uci -q get "natmap_callback.${private_port}")"
 
     if [[ "${sub_domain}" == "" ]]; then
     	sc_send 'Natmap 映射已更新' ${@}
@@ -211,6 +229,7 @@ function redirect_domain_check() {
 }
 
 function main() {
+    echo "main: ${@}"
     redirect_domain_check ${@} || setup_failed $? ${@}
 
     redirect_rule_setup ${@} || setup_failed $? ${@}

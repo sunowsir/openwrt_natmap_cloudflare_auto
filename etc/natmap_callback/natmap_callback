@@ -5,9 +5,6 @@
 #       * Mail     : sunowsir@163.com
 #       * Github   : github.com/sunowsir
 #       * Creation : Fri 20 Dec 2024 02:55:51 PM CST
-#       Copyright (C) 2008-2019 sunowsir
-#
-#       This is free software, licensed under the AGPL-3.0 license .
 
 
 
@@ -29,4 +26,4 @@ FILE_IDLE="$(( $(date '+%s') - $(date -r "${LOG_FILE}" '+%s' 2>/dev/null || echo
     rm -rf ${LOG_FILE}
 
 WORK_SH_FILE="natmap_callback_main"
-flock ${LOCK_FILE} ${WORK_DIR}/${WORK_SH_FILE} ${@} >> ${LOG_FILE} 2>&1 
+flock ${LOCK_FILE} ${WORK_DIR}/${WORK_SH_FILE} ${@} # >> ${LOG_FILE} 2>&1 
