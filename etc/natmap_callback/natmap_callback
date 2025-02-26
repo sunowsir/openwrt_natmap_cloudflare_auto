@@ -26,4 +26,4 @@ FILE_IDLE="$(( $(date '+%s') - $(date -r "${LOG_FILE}" '+%s' 2>/dev/null || echo
     rm -rf ${LOG_FILE}
 
 WORK_SH_FILE="natmap_callback_main"
-flock ${LOCK_FILE} ${WORK_DIR}/${WORK_SH_FILE} ${@} # >> ${LOG_FILE} 2>&1 
+flock ${LOCK_FILE} ${WORK_DIR}/${WORK_SH_FILE} ${@} >> ${LOG_FILE} 2>&1 
