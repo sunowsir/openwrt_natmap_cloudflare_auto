@@ -1,75 +1,70 @@
 #!/bin/bash
 
-WORK_DIR="$(dirname $(readlink -f "${0}"))"
+WORK_DIR="$(dirname "$(readlink -f "${0}")")"
 source "${WORK_DIR}/natmap_callback.config"
 
 # Cloudflare DNS RECORD API URL
 CLOUDFLARE_DNS_API_URL="${CLOUDFLARE_API_URL}/dns_records"
 
+# Cloudflare DNS RECORD ADD API URL
+CLOUDFLARE_DNS_ADD_API_URL="${CLOUDFLARE_API_URL}/${ZONE}/dns_records"
+
 # 获取 DNS 记录信息
 function record_info_get() {
     local sub_domain="${1}"
-    local record_info=$(curl -s -X GET "${CLOUDFLARE_DNS_API_URL}?type=A&name=${sub_domain}" \
+
+    declare record_info
+    record_info="$(curl -s -X GET "${CLOUDFLARE_DNS_API_URL}?type=A&name=${sub_domain}" \
         -H "Authorization: Bearer ${AUTH}" \
-        -H "Content-Type: application/json")
+        -H "Content-Type: application/json")"
     echo "${record_info}"
 }
 
 # 获取 DNS 记录 ID
 function record_id_get() {
     local record_info="${1}"
-    echo "$(echo "${record_info}" | jq -r '.result[0].id')"
+    echo "${record_info}" | jq -r '.result[0].id'
 }
 
 # 获取 DNS 记录 IP
 function record_ip_get() {
     local record_info="${1}"
-    echo "$(echo "${record_info}" | jq -r '.result[0].content')"
+    echo "${record_info}" | jq -r '.result[0].content'
 }
 
-function record_check() {
+# 新增 DNS 记录
+function record_add() {
     local sub_domain="${1}"
     local new_ipaddr="${2}"
 
-    local record_info="$(record_info_get ${sub_domain})"
-    local record_id="$(record_id_get ${record_info})"
-    local record_ip="$(record_ip_get ${record_info})"
-    local response=""
-
-    # 如果找不到记录，则添加记录
-    if [[ "${record_id}" == "null" ]]; then
-        # 添加 A 记录
-        response=$(curl -s -X POST "${CLOUDFLARE_DNS_API_URL}" \
-            -H "Authorization: Bearer ${AUTH}" \
-            -H "Content-Type: application/json" \
-            --data '{
-                "type": "A",
-                "name": "'"${sub_domain}"'",
-                "content": "'"${new_ipaddr}"'",
-                "ttl": auto,
-                "proxied": true
-            }')
+    # 添加 A 记录
+    response=$(curl -s -X POST "${CLOUDFLARE_DNS_ADD_API_URL}" \
+        -H "Authorization: Bearer ${AUTH}" \
+        -H "Content-Type: application/json" \
+        --data '{
+            "type": "A",
+            "name": "'"${sub_domain}"'",
+            "content": "'"${new_ipaddr}"'",
+            "proxied": true
+        }')
     
-        # 解析 API 响应
-        local success=$(echo "${response}" | jq -r '.success')
-        
-        if [[ "${success}" != "true" ]]; then
-            echo "添加 ${sub_domain} 的 A 记录失败: ${response}"
-	    return 127
-        fi
-
-        echo "成功添加 ${sub_domain} 的 A 记录为 ${new_ipaddr}"
-	return 0
+    # 解析 API 响应
+    local success=$(echo "${response}" | jq -r '.success')
+    
+    if [[ "${success}" != "true" ]]; then
+        echo "添加 ${sub_domain} 的 A 记录失败: ${response}"
+        return 127
     fi
     
-    echo "找到 DNS 记录 (ID: ${record_id})，当前 IP: ${record_ip}"
+    echo "成功添加 ${sub_domain} 的 A 记录为 ${new_ipaddr}"
+    return 0
+}
 
-    # 如果 IP 未变化，则不修改
-    if [[ "${record_ip}" == "${new_ipaddr}" ]]; then
-        echo "新 IP 与当前 IP 相同，无需修改"
-	return 0
-    fi
-    
+# 更新 DNS 记录
+function record_modify() {
+    local sub_domain="${1}"
+    local new_ipaddr="${2}"
+
     # 更新 A 记录
     response=$(curl -s -X PUT "${CLOUDFLARE_DNS_API_URL}/${record_id}" \
         -H "Authorization: Bearer ${AUTH}" \
@@ -82,14 +77,45 @@ function record_check() {
         }')
     
     # 解析 API 响应
-    local success=$(echo "${response}" | jq -r '.success')
+    declare success
+    success=$(echo "${response}" | jq -r '.success')
     
     if [[ "${success}" != "true" ]]; then
         echo "修改 A 记录失败: ${response}"
-	return 127
+        return 127
     fi
 
-    echo "成功将 ${subdomain} 的 A 记录修改为 ${new_ipaddr}"
+    echo "成功将 ${sub_domain} 的 A 记录修改为 ${new_ipaddr}"
+    return 0
+}
+
+function record_check() {
+    local sub_domain="${1}"
+    local new_ipaddr="${2}"
+
+    declare record_info
+    declare record_id
+    declare record_ip
+
+    record_info="$(record_info_get "${sub_domain}")"
+    record_id="$(record_id_get "${record_info}")"
+    record_ip="$(record_ip_get "${record_info}")"
+
+    # 如果找不到记录，则添加记录
+    if [[ "${record_id}" == "null" ]]; then
+        record_add "${sub_domain}" "${new_ipaddr}"
+        return $?
+    fi
+    
+    echo "找到 DNS 记录 (ID: ${record_id})，当前 IP: ${record_ip}"
+
+    # 如果 IP 未变化，则不修改
+    if [[ "${record_ip}" == "${new_ipaddr}" ]]; then
+        echo "新 IP 与当前 IP 相同，无需修改"
+        return 0
+    fi
+
+    record_modify "${sub_domain}" "${new_ipaddr}"
     return $?
 }
 

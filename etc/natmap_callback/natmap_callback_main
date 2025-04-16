@@ -8,7 +8,7 @@
 
 set -x
 
-WORK_DIR="$(dirname $(readlink -f "${0}"))"
+WORK_DIR="$(dirname "$(readlink -f "${0}")")"
 source "${WORK_DIR}/natmap_callback.config"
 source "${WORK_DIR}/natmap_callback_notify_push"
 source "${WORK_DIR}/natmap_callback_dns_record"
@@ -23,13 +23,14 @@ function sc_send() {
     local protocol="${6}"
 
     # 调用sc_send函数
-    local ret=$(sc_send_proc "${notify_title}" \
+    declare ret
+    ret=$(sc_send_proc "${notify_title}" \
         "${protocol}: ${private_ipv4}:${private_port} --> ${public_ipv4}:${public_port}"$'\n\n' \
         "$SENDKEY")
 
     if [[ ${ret} -ne 200 ]]; then
         echo "send ${*} error: ${ret}" 
-        return -1
+        return 127
     fi
 
     return 0
@@ -37,19 +38,22 @@ function sc_send() {
 
 # 获取现有规则列表
 function currlent_rules_get() {
-    local current_rules=""
+    declare response
+    declare success
 
-    for ((i = 0; i < ${RETRY_NUM}; i++)); do
-        current_rules=$(curl -s -X GET "${CLOUDFLARE_API_URL}/rulesets/${RULE}" \
+    for ((i = 0; i < RETRY_NUM; i++)); do
+        response=$(curl -s -X GET "${CLOUDFLARE_API_URL}/rulesets/${RULE}" \
             -H "Authorization: Bearer ${AUTH}" \
             -H "Content-Type: application/json" | jq '.result.rules')
 
-        if [[ ${?} -eq 0 ]]; then
-            break;
+        # 解析 API 响应
+        success=$(echo "${response}" | jq -r '.success')
+        if [[ "${success}" != "true" ]]; then
+            break
         fi
     done
 
-    echo "${current_rules}"
+    echo "${response}"
 }
 
 # 定义新规则
@@ -93,13 +97,15 @@ function same_rules_check() {
 function push_new_rules() {
     local updated_rules="${1}"
 
-    local response=$(curl -X PUT "${CLOUDFLARE_API_URL}/rulesets/${RULE}" \
+    declare response
+    response=$(curl -X PUT "${CLOUDFLARE_API_URL}/rulesets/${RULE}" \
         -H "Authorization: Bearer ${AUTH}" \
         -H "Content-Type: application/json" \
 	--data "{\"name\":\"default\",\"kind\":\"zone\",\"phase\":\"http_request_dynamic_redirect\",\"rules\":${updated_rules}}")
 
     # 解析 API 响应
-    local success=$(echo "${response}" | jq -r '.success')
+    declare success
+    success=$(echo "${response}" | jq -r '.success')
     if [[ "${success}" != "true" ]]; then
         echo "提交规则失败: ${response}"
         return 127
@@ -119,18 +125,19 @@ function redirect_rule_setup_proc() {
 
     for ((i = 0; i < ${RETRY_NUM}; i++)); do
         # 获取现有规则列表
-        local current_rules="$(currlent_rules_get)"
+        declare current_rules
+        current_rules="$(currlent_rules_get)"
 
         # 定义新规则
-        local new_rule="$(new_rule_make "${PORT}" "${ACCESS_DOMAIN}" "${RULE_NAME}")"
+        declare new_rule
+        new_rule="$(new_rule_make "${PORT}" "${ACCESS_DOMAIN}" "${RULE_NAME}")"
 
         # 检查是否存在相同描述的规则
-        local updated_rules="$(same_rules_check "${current_rules}" "${new_rule}" "${RULE_NAME}")"
+        declare updated_rules
+        updated_rules="$(same_rules_check "${current_rules}" "${new_rule}" "${RULE_NAME}")"
 
         # 提交更新后的规则
-        push_new_rules "${updated_rules}"
-
-        if [[ ${?} -eq 0 ]]; then
+        if push_new_rules "${updated_rules}" ; then
             break;
         fi
     done
@@ -143,10 +150,8 @@ function access_domain_dns_records_add() {
     local public_ipv4="${1}"
     local private_port="${4}"
 
-    for ((i = 0; i < ${RETRY_NUM}; i++)); do
-        record_check "$(uci -q get "natmap_callback.${private_port}").${ROOT_DOMAIN}" "${public_ipv4}"
-
-        if [[ ${?} -eq 0 ]]; then
+    for ((i = 0; i < RETRY_NUM; i++)); do
+        if record_check "$(uci -q get "natmap_callback.${private_port}").${ROOT_DOMAIN}" "${public_ipv4}" ; then
             break;
         fi
     done
@@ -156,14 +161,16 @@ function access_domain_dns_records_add() {
 
 # 转发规则设置 
 function redirect_rule_setup() {
-    echo "redirect_rule_setup: ${@}"
+    echo "redirect_rule_setup: ${*}"
 
     local public_ipv4="${1}"
     local public_port="${2}"
     local private_ipv4="${6}"
     local protocol="${5}"
     local private_port="${4}"
-    local sub_domain="$(uci -q get "natmap_callback.${private_port}")"
+
+    declare sub_domain
+    sub_domain="$(uci -q get "natmap_callback.${private_port}")"
 
     # redirect_domain_dns_records "${public_ipv4}" 
     redirect_rule_setup_proc "${public_ipv4}" "${public_port}" "${sub_domain}" 
@@ -197,16 +204,16 @@ function firewall_rules_add() {
 function setup_failed() {
     local failed_code="${1}"
 
-    sc_send 'Natmap 映射更新失败' ${@}
+    sc_send 'Natmap 映射更新失败' "${@}"
 
     shift 
 
-    exit ${failed_code}
+    exit "${failed_code}"
 }
 
 # 检查是否存在子域名配置，若不存在则仅通知，然后直接退出脚本
 function redirect_domain_check() {
-    echo "redirect_domain_check: ${@}"
+    echo "redirect_domain_check: ${*}"
     local public_ipv4="${1}"
     local public_port="${2}"
     local private_ipv4="${6}"
@@ -215,13 +222,14 @@ function redirect_domain_check() {
 
     if [[ "${private_port}" == "" ]]; then
         echo "private_port is NULL"
-        return -1
+        return 127
     fi
 
-    local sub_domain="$(uci -q get "natmap_callback.${private_port}")"
+    declare sub_domain
+    sub_domain="$(uci -q get "natmap_callback.${private_port}")"
 
     if [[ "${sub_domain}" == "" ]]; then
-    	sc_send 'Natmap 映射已更新' ${@}
+    	sc_send 'Natmap 映射已更新' "${@}"
 	exit 0
     fi
 
@@ -229,17 +237,17 @@ function redirect_domain_check() {
 }
 
 function main() {
-    echo "main: ${@}"
-    redirect_domain_check ${@} || setup_failed $? ${@}
+    echo "main: ${*}"
+    redirect_domain_check "${@}" || setup_failed ${?} "${@}"
 
-    redirect_rule_setup ${@} || setup_failed $? ${@}
+    redirect_rule_setup "${@}" || setup_failed ${?} "${@}"
 
-    firewall_rules_add ${@} || setup_failed $? ${@}
+    firewall_rules_add "${@}" || setup_failed ${?} "${@}"
 
-    access_domain_dns_records_add ${@} || setup_failed $? ${@}
+    access_domain_dns_records_add "${@}" || setup_failed ${?} "${@}"
 
     # 成功发通知
-    sc_send 'Natmap 映射已更新' ${@}
+    sc_send 'Natmap 映射已更新' "${@}"
 
     return $?
 }
@@ -248,7 +256,7 @@ echo "---"
 echo "${@}"
 echo "---"
 
-main ${@}
+main "${@}"
 
 set +x
 

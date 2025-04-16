@@ -5,7 +5,7 @@
 #       * Mail     : sunowsir@163.com
 #       * Github   : github.com/sunowsir
 
-WORK_DIR="$(dirname $(readlink -f "${0}"))"
+WORK_DIR="$(dirname "$(readlink -f "${0}")")"
 source "${WORK_DIR}/natmap_callback.config"
 
 function sc_send_proc() {
@@ -29,7 +29,8 @@ function sc_send_proc() {
 
 
     # 使用动态生成的 url 发送请求
-    local result=$(curl -X POST -s -o /dev/null -w "%{http_code}" "$url" "${opts[@]}")
+    declare result
+    result=$(curl -X POST -s -o /dev/null -w "%{http_code}" "$url" "${opts[@]}")
     echo "$result"
 }
 
