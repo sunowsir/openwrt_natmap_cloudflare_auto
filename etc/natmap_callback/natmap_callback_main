@@ -22,6 +22,8 @@ function sc_send() {
     local private_port="${5}"
     local protocol="${6}"
 
+    [[ ! $(uci -q get "natmap_callback.${private_port}.notify") ]] && return 0
+
     # 调用sc_send函数
     declare ret
     ret=$(sc_send_proc "${notify_title}" \

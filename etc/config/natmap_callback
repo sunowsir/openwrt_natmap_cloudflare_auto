@@ -36,5 +36,7 @@ config natmap_callback 'cloudflare'
 # 单引号中填写natmap配置文件/etc/config/natmap中的：
 # option port '20809' 配置项目中的端口号，
 # 单引号前面的部分则是访问域名的子域名，例如blog.yl0618.tech中的blog，
+# 如需开启通知，则需要为其增加子option配置项参考如下
 config blog '28090'
+    option notify 1
 
