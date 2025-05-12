@@ -158,6 +158,8 @@ function access_domain_dns_records_add() {
         fi
     done
 
+    record_modify "${REDIRECT_DOMAIN}" "${public_ipv4}"
+
     return $?
 }
 
