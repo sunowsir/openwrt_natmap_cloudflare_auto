@@ -111,7 +111,7 @@ function record_check() {
 
     # 如果 IP 未变化，则不修改
     if [[ "${record_ip}" == "${new_ipaddr}" ]]; then
-        echo "新 IP 与当前 IP 相同，无需修改"
+        echo "${sub_domain} 新 IP 与当前 IP 相同，无需修改"
         return 0
     fi
 
