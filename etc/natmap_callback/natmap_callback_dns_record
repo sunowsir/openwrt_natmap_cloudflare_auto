@@ -6,9 +6,6 @@ source "${WORK_DIR}/natmap_callback.config"
 # Cloudflare DNS RECORD API URL
 CLOUDFLARE_DNS_API_URL="${CLOUDFLARE_API_URL}/dns_records"
 
-# Cloudflare DNS RECORD ADD API URL
-CLOUDFLARE_DNS_ADD_API_URL="${CLOUDFLARE_API_URL}/${ZONE}/dns_records"
-
 # 获取 DNS 记录信息
 function record_info_get() {
     local sub_domain="${1}"
@@ -38,7 +35,7 @@ function record_add() {
     local new_ipaddr="${2}"
 
     # 添加 A 记录
-    response=$(curl -s -X POST "${CLOUDFLARE_DNS_ADD_API_URL}" \
+    response=$(curl -s -X POST "${CLOUDFLARE_DNS_API_URL}" \
         -H "Authorization: Bearer ${AUTH}" \
         -H "Content-Type: application/json" \
         --data '{
@@ -80,7 +77,7 @@ function record_modify() {
     declare success
     success=$(echo "${response}" | jq -r '.success')
     
-    if [[ "${success}" != "true" ]]; then
+    if [[ "${success}" != "" ]] && [[ "${success}" != "true" ]]; then
         echo "修改 A 记录失败: ${response}"
         return 127
     fi
