@@ -48,7 +48,7 @@ function record_add() {
     # 解析 API 响应
     local success=$(echo "${response}" | jq -r '.success')
     
-    if [[ "${success}" != "true" ]]; then
+    if [[ "${success}" != 'true' ]]; then
         echo "添加 ${sub_domain} 的 A 记录失败: ${response}"
         return 127
     fi
@@ -61,6 +61,17 @@ function record_add() {
 function record_modify() {
     local sub_domain="${1}"
     local new_ipaddr="${2}"
+    local proxied="${3}"
+
+    if [[ "${proxied}" == "" ]]; then
+        proxied="true"
+    fi
+
+    declare record_info
+    declare record_id
+
+    record_info="$(record_info_get "${sub_domain}")"
+    record_id="$(record_id_get "${record_info}")"
 
     # 更新 A 记录
     response=$(curl -s -X PUT "${CLOUDFLARE_DNS_API_URL}/${record_id}" \
@@ -70,14 +81,14 @@ function record_modify() {
           "type": "A",
           "name": "'"${sub_domain}"'",
           "content": "'"${new_ipaddr}"'",
-          "proxied": true
+          "proxied": '"${proxied}"'
         }')
     
     # 解析 API 响应
     declare success
     success=$(echo "${response}" | jq -r '.success')
     
-    if [[ "${success}" != "" ]] && [[ "${success}" != "true" ]]; then
+    if [[ "${success}" != '' ]] && [[ "${success}" != 'true' ]]; then
         echo "修改 A 记录失败: ${response}"
         return 127
     fi

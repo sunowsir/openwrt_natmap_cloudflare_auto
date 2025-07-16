@@ -22,7 +22,10 @@ function sc_send() {
     local private_port="${5}"
     local protocol="${6}"
 
-    [[ ! $(uci -q get "natmap_callback.${private_port}.notify") ]] && return 0
+    if [[ "$(uci -q get "natmap_callback.${private_port}")" != "" ]] && 
+       [[ ! $(uci -q get "natmap_callback.${private_port}.notify") ]] ; then 
+    	return 0
+    fi
 
     # 调用sc_send函数
     declare ret
@@ -46,16 +49,16 @@ function currlent_rules_get() {
     for ((i = 0; i < RETRY_NUM; i++)); do
         response=$(curl -s -X GET "${CLOUDFLARE_API_URL}/rulesets/${RULE}" \
             -H "Authorization: Bearer ${AUTH}" \
-            -H "Content-Type: application/json" | jq '.result.rules')
+            -H "Content-Type: application/json")
 
         # 解析 API 响应
         success=$(echo "${response}" | jq -r '.success')
-        if [[ "${success}" != "true" ]]; then
+        if [[ "${success}" == 'true' ]]; then
             break
         fi
     done
 
-    echo "${response}"
+    echo "${response}" | jq '.result.rules'
 }
 
 # 定义新规则
@@ -108,7 +111,7 @@ function push_new_rules() {
     # 解析 API 响应
     declare success
     success=$(echo "${response}" | jq -r '.success')
-    if [[ "${success}" != "true" ]]; then
+    if [[ "${success}" != 'true' ]]; then
         echo "提交规则失败: ${response}"
         return 127
     fi
@@ -158,7 +161,7 @@ function access_domain_dns_records_add() {
         fi
     done
 
-    record_modify "${REDIRECT_DOMAIN}" "${public_ipv4}"
+    record_modify "${REDIRECT_DOMAIN}" "${public_ipv4}" "false"
 
     return $?
 }
@@ -215,7 +218,7 @@ function setup_failed() {
     exit "${failed_code}"
 }
 
-# 检查是否存在子域名配置，若不存在则仅通知，然后直接退出脚本
+# 检查是否存在子域名配置，若不存在则仅通知并添加防火墙规则，然后直接退出脚本
 function redirect_domain_check() {
     echo "redirect_domain_check: ${*}"
     local public_ipv4="${1}"
@@ -234,6 +237,7 @@ function redirect_domain_check() {
 
     if [[ "${sub_domain}" == "" ]]; then
     	sc_send 'Natmap 映射已更新' "${@}"
+    	firewall_rules_add "${@}" || setup_failed ${?} "${@}"
 	exit 0
     fi
 
