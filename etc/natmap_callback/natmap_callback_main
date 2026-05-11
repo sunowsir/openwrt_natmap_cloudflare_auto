@@ -1,19 +1,20 @@
 #!/bin/bash
 #
 #       * File     : natmap_callback_main
-#       * Author   : sunowsir
-#       * Mail     : sunowsir@163.com
+#       * Author   : sunowsir (rebuild with jshn)
+#       * Mail     : sunow.wang@gmail.com
 #       * Github   : github.com/sunowsir
-#       * Creation : Fri 20 Dec 2024 01:24:17 PM CST
-
-set -x
 
 WORK_DIR="$(dirname "$(readlink -f "${0}")")"
+source /usr/share/libubox/jshn.sh
 source "${WORK_DIR}/natmap_callback.config"
 source "${WORK_DIR}/natmap_callback_notify_push"
 source "${WORK_DIR}/natmap_callback_dns_record"
 
+
+# ==============================================================
 # 发送通知
+# ==============================================================
 function sc_send() {
     local notify_title="${1}"
     local public_ipv4="${2}"
@@ -21,19 +22,21 @@ function sc_send() {
     local private_ipv4="${7}"
     local private_port="${5}"
     local protocol="${6}"
+    local level="${7}"
 
-    if [[ "$(uci -q get "natmap_callback.${private_port}")" != "" ]] && 
-       [[ ! $(uci -q get "natmap_callback.${private_port}.notify") ]] ; then 
-    	return 0
+    if [ "$(uci -q get "natmap_callback.${private_port}")" != "" ] && 
+       [ ! $(uci -q get "natmap_callback.${private_port}.notify") ] &&
+       [ ${level} -eq 0 ]; then 
+        return 0
     fi
 
-    # 调用sc_send函数
+    # 发送通知
     declare ret
     ret=$(sc_send_proc "${notify_title}" \
         "${protocol}: ${private_ipv4}:${private_port} --> ${public_ipv4}:${public_port}"$'\n\n' \
         "$SENDKEY")
 
-    if [[ ${ret} -ne 200 ]]; then
+    if [ ${ret} -ne 200 ]; then
         echo "send ${*} error: ${ret}" 
         return 127
     fi
@@ -41,231 +44,342 @@ function sc_send() {
     return 0
 }
 
-# 获取现有规则列表
-function currlent_rules_get() {
-    declare response
-    declare success
+# ==============================================================
+# 日志
+# ==============================================================
+log_init() {
+    mkdir -p "${LOGS_SAVE_DIR}" 2>/dev/null
+    exec >>"${LOGS_SAVE_DIR}${LOGS_FILENAME}" 2>/dev/null
+    exec 2>&1
+}
 
-    for ((i = 0; i < RETRY_NUM; i++)); do
-        response=$(curl -s -X GET "${CLOUDFLARE_API_URL}/rulesets/${RULE}" \
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
+
+# ==============================================================
+# API success 检查
+# 流程: json_cleanup → json_init → json_load → json_get_var → 判断
+# "success":true → let 设=1 → json_get_var 读到 "1" → [ "$ok" = "1" ] 成立 → return 0
+# "success":false → let 设=0 → json_get_var 读到 "0" → [ "$ok" = "1" ] 不成立 → return 1
+# ==============================================================
+_api_ok() {
+    local resp="$1"
+    json_cleanup
+    json_init
+    json_load "${resp}"
+    local ok
+    json_get_var ok success
+    [ "$ok" = "1" ] && return 0
+    return 1
+}
+
+# ==============================================================
+# Cloudflare API 请求（带重试）
+# ==============================================================
+
+_cf_get() {
+    local url="$1"
+    local resp i
+    for ((i = 0; i < ${RETRY_NUM:-3}; i++)); do
+        resp="$(curl -s -X GET "${url}" \
             -H "Authorization: Bearer ${AUTH}" \
-            -H "Content-Type: application/json")
+            -H "Content-Type: application/json")"
+        if _api_ok "${resp}"; then
+            echo "${resp}"
+            return 0
+        fi
+        log "API GET 失败（重试 ${i}）"
+    done
+    return 1
+}
 
-        # 解析 API 响应
-        success=$(echo "${response}" | jq -r '.success')
-        if [[ "${success}" == 'true' ]]; then
-            break
+_cf_put() {
+    local url="$1"
+    local data="$2"
+    local resp i
+    for ((i = 0; i < ${RETRY_NUM:-3}; i++)); do
+        resp="$(curl -s -X PUT "${url}" \
+            -H "Authorization: Bearer ${AUTH}" \
+            -H "Content-Type: application/json" \
+            --data "${data}")"
+        if _api_ok "${resp}"; then
+            echo "${resp}"
+            return 0
+        fi
+        log "API PUT 失败（重试 ${i}）"
+    done
+    return 1
+}
+
+# ==============================================================
+# 用 jshn.sh 提取 result.rules [...] 数组
+# 注意：json_dump -w 从 rules 节点 dump 会包含 result/success/errors 等父级内容
+# 故用 regex 提取 "rules":[...] 之间的纯数组部分
+# ==============================================================
+_get_rules_key() {
+    local full_resp="$1"
+
+    # 验证 success
+    json_cleanup
+    json_init
+    json_load "${full_resp}"
+    local ok
+    json_get_var ok success
+    [ "$ok" = "1" ] || { json_cleanup; return 1; }
+
+    json_select result 
+    json_select rules 
+    json_get_keys rules_key
+
+    [ -z "$rules_key" ] || [ "$rules_key" = "" ] && return 1
+    echo "${rules_key}"
+    return 0
+}
+
+# ==============================================================
+# rules 数组操作（纯字符串 + 平衡括号）
+# ==============================================================
+
+# 提取 rules[n].description
+_rules_n_description() {
+    local rules_json="$1"
+    local n="$2"
+    echo "$rules_json" | sed -n 's/.*"description":"\([^"]*\)".*/\1/p' | sed -n "$((n+1))p"
+}
+
+# 找 description=rule_name 的规则编号
+_rules_find_index() {
+    local rules_json="$1"
+    local rule_name="$2"
+    local n=0 desc
+    while true; do
+        desc="$(_rules_n_description "${rules_json}" "$n")"
+        [ -z "$desc" ] && break
+        [ "$desc" = "$rule_name" ] && { echo "$n"; return 0; }
+        n=$((n+1))
+    done
+    return 1
+}
+
+# 追加规则到数组末尾
+_rules_append() {
+    local arr="$1"
+    local new_el="$2"
+    echo "${arr%]},${new_el}]"
+}
+
+# 替换 rules[n]（平衡括号法）
+_rules_replace_n() {
+    local rules_json="$1"
+    local n="$2"
+    local new_rule="$3"
+    local count=0 depth=0 in_str=false esc=false
+    local i ch pos_start
+
+    for ((i=0; i<${#rules_json}; i++)); do
+        ch="${rules_json:i:1}"
+        if $esc; then esc=false; continue; fi
+        if $in_str; then
+            [ "$ch" = '\' ] && esc=true
+            continue
+        fi
+        [ "$ch" = '"' ] && in_str=true && continue
+
+        if ! $in_str && [ "$ch" = '{' ]; then
+            ((count++))
+            if [ $count -eq $((n+1)) ]; then
+                pos_start=$i
+                ((depth++))
+                continue
+            fi
+        fi
+
+        if [ $count -eq $((n+1)) ]; then
+            [ "$ch" = '{' ] && ((depth++))
+            [ "$ch" = '}' ] && ((depth--))
+            if [ $depth -eq 0 ] && [ "$ch" = '}' ]; then
+                echo "${rules_json:0:pos_start}${new_rule}${rules_json:i+1}"
+                return 0
+            fi
         fi
     done
-
-    echo "${response}" | jq '.result.rules'
+    _rules_append "${rules_json}" "${new_rule}"
 }
 
-# 定义新规则
-function new_rule_make() {
-    local PORT=${1}
-    # 访问域名
-    local ACCESS_DOMAIN="${2}"
-    # 规则名称
-    local RULE_NAME="${3}"
+# upsert
+_rules_upsert() {
+    local rules_json="$1"
+    local new_rule="$2"
+    local rule_name="$3"
 
-    local new_rule="{\"expression\":\"(http.request.full_uri wildcard r\\\"http*://${ACCESS_DOMAIN}/*\\\")\",\"description\":\"${RULE_NAME}\",\"action\":\"redirect\",\"action_parameters\":{\"from_value\":{\"target_url\":{\"expression\":\"wildcard_replace(http.request.full_uri, r\\\"http*://${ACCESS_DOMAIN}/*\\\", r\\\"https://${REDIRECT_DOMAIN}:${PORT}/\${2}\\\")\"},\"status_code\":301,\"preserve_query_string\":true}}}"
-
-    echo "${new_rule}"
-}
-
-# 检查是否存在相同描述的规则
-function same_rules_check() {
-    local current_rules="${1}"   # 当前规则 JSON 数据
-    local new_rule="${2}"       # 新规则 JSON 数据
-    local RULE_NAME="${3}"      # 规则名称
-
-    # 检查是否存在相同描述的规则
-    local rule_exists
-    rule_exists=$(echo "$current_rules" | jq --arg rule_name "$RULE_NAME" '[.[] | select(.description == $rule_name)]')
-
-    local updated_rules
-
-    if [[ $(echo "$rule_exists" | jq 'length') -gt 0 ]]; then
-        # 若描述相同的规则已存在，则替换旧规则
-        updated_rules=$(echo "$current_rules" | jq --argjson new_rule "$new_rule" --arg rule_name "$RULE_NAME" \
-            'map(if .description == $rule_name then $new_rule else . end)')
+    local idx
+    idx="$(_rules_find_index "${rules_json}" "${rule_name}")"
+    if [ -n "$idx" ]; then
+        _rules_replace_n "${rules_json}" "$idx" "${new_rule}"
     else
-        # 若规则不存在，则追加新规则
-        updated_rules=$(echo "$current_rules" | jq --argjson new_rule "$new_rule" '. += [$new_rule]')
+        _rules_append "${rules_json}" "${new_rule}"
     fi
-
-    echo "${updated_rules}"
 }
 
-# 提交更新后的规则
-function push_new_rules() {
-    local updated_rules="${1}"
+# ==============================================================
+# 构造新规则 JSON
+# ==============================================================
+_new_rule_json() {
+    local final_list=""
 
-    declare response
-    response=$(curl -X PUT "${CLOUDFLARE_API_URL}/rulesets/${RULE}" \
-        -H "Authorization: Bearer ${AUTH}" \
-        -H "Content-Type: application/json" \
-	--data "{\"name\":\"default\",\"kind\":\"zone\",\"phase\":\"http_request_dynamic_redirect\",\"rules\":${updated_rules}}")
-
-    # 解析 API 响应
-    declare success
-    success=$(echo "${response}" | jq -r '.success')
-    if [[ "${success}" != 'true' ]]; then
-        echo "提交规则失败: ${response}"
-        return 127
-    fi
+    for raw_f in `ls /var/run/natmap/*.json`; do
+        raw_str="$(cat ${raw_f})"
+        # 1. 解析当前的单个 JSON 字符串
+        json_load "$raw_str"
+        json_get_var p port
+        json_get_var ip inner_port
     
-    return $?
-}
-
-# Redirect rule
-function redirect_rule_setup_proc() {
-    # 映射端口
-    local PORT=${2}
-    # 访问域名
-    local ACCESS_DOMAIN="${3}.${ROOT_DOMAIN}"
-    # 规则名称
-    local RULE_NAME="${3}"
-
-    for ((i = 0; i < ${RETRY_NUM}; i++)); do
-        # 获取现有规则列表
-        declare current_rules
-        current_rules="$(currlent_rules_get)"
-
-        # 定义新规则
-        declare new_rule
-        new_rule="$(new_rule_make "${PORT}" "${ACCESS_DOMAIN}" "${RULE_NAME}")"
-
-        # 检查是否存在相同描述的规则
-        declare updated_rules
-        updated_rules="$(same_rules_check "${current_rules}" "${new_rule}" "${RULE_NAME}")"
-
-        # 提交更新后的规则
-        if push_new_rules "${updated_rules}" ; then
-            break;
-        fi
+        # 2. 将提取到的值暂存（或者直接开始构造最终 JSON）
+        # 这里我们演示：将结果组成一个简单的 KV 对列表，用空格分隔
+        final_list="$final_list $p:$ip"
     done
 
-    return $?
-}
+    json_init 
+    json_add_string "name" "default"
+    json_add_string "kind" "zone"
+    json_add_string "phase" "http_request_dynamic_redirect"
+    json_add_array "rules"
 
-# 访问域名DNS记录设置
-function access_domain_dns_records_add() {
-    local public_ipv4="${1}"
-    local private_port="${4}"
+    for pair in $final_list; do
+        # 拆分端口
+	local public_port="${pair%:*}"
+	local private_port="${pair#*:}"
 
-    for ((i = 0; i < RETRY_NUM; i++)); do
-        if record_check "$(uci -q get "natmap_callback.${private_port}").${ROOT_DOMAIN}" "${public_ipv4}" ; then
-            break;
-        fi
+	# 获取其他信息 
+	local sub_domain="$(uci -q get "natmap_callback.${private_port}")"
+	if [ -z "${sub_domain//[[:space:]]/}" ]; then 
+            continue
+        fi 
+
+	local access_domain="${sub_domain}.${ROOT_DOMAIN}"
+	local redirect_domain="${REDIRECT_DOMAIN}:${public_port}"
+	local rule_name="${sub_domain}"
+
+        json_add_object ""
+
+            json_add_string "action" "redirect"
+            json_add_object "action_parameters"
+
+                json_add_object "from_value"
+
+                    json_add_int "status_code" 301
+                    json_add_boolean "preserve_query_string" 1
+
+                    json_add_object "target_url"
+                        json_add_string "expression" "wildcard_replace(http.request.full_uri, r\"http*://${access_domain}/*\", r\"https://${redirect_domain}/\${2}\")"
+		    json_close_object
+
+		json_close_object
+
+	    json_close_object
+
+            json_add_string "description" "${rule_name}" 
+            json_add_string "expression" "(http.request.full_uri wildcard r\"http*://${access_domain}/*\")"
+
+	json_close_object
+
     done
 
-    record_modify "${REDIRECT_DOMAIN}" "${public_ipv4}" "false"
-
-    return $?
+    json_close_array
+    
+    local new_json="$(json_dump)"
+    echo "${new_json}"
 }
 
-# 转发规则设置 
-function redirect_rule_setup() {
-    echo "redirect_rule_setup: ${*}"
+# ==============================================================
+# 重定向规则设置
+# ==============================================================
+_redirect_setup() {
+    local public_port="$2"
+    local private_port="$4"
 
-    local public_ipv4="${1}"
-    local public_port="${2}"
-    local private_ipv4="${6}"
-    local protocol="${5}"
-    local private_port="${4}"
-
-    declare sub_domain
+    local sub_domain
     sub_domain="$(uci -q get "natmap_callback.${private_port}")"
+    [ -z "${sub_domain}" ] && {
+        log "未配置子域名（port=${private_port}），跳过转发规则"
+        return 0
+    }
 
-    # redirect_domain_dns_records "${public_ipv4}" 
-    redirect_rule_setup_proc "${public_ipv4}" "${public_port}" "${sub_domain}" 
-     
-    return $?
+    local ACCESS_DOMAIN="${sub_domain}.${ROOT_DOMAIN}"
+    local RULE_NAME="${sub_domain}"
+
+    log "开始设置转发规则: ACCESS_DOMAIN=${ACCESS_DOMAIN}, PORT=${public_port}"
+
+    local full_resp current_rules new_rule updated_rules
+    local try
+    for ((try = 0; try < ${RETRY_NUM:-3}; try++)); do
+        local new_rule="$(_new_rule_json)"
+
+        if _cf_put "${CLOUDFLARE_API_URL}/rulesets/${RULE}" \
+            "${new_rule}"; then
+            log "规则推送成功"
+            return 0
+        fi
+
+        log "规则提交失败（重试 ${try}）"
+    done
+
+    return 1
 }
 
-# 添加防火墙规则
-function firewall_rules_add() {
-    local private_port="${4}"
+# ==============================================================
+# 防火墙
+# ==============================================================
+_firewall_allow() {
+    local private_port="$1"
 
-    # 1. 检查是否已经存在同名规则
-    if ! uci show firewall | grep -q "firewall.@rule\[.*\].name='Allow-${private_port}'"; then
-
-        # 2. 添加通讯规则
+    if ! uci show firewall 2>/dev/null | grep -q "firewall.@rule\[.*\].name='Allow-${private_port}'"; then
         uci add firewall rule
         uci set firewall.@rule[-1].name="Allow-${private_port}"
         uci set firewall.@rule[-1].src='wan'
         uci set firewall.@rule[-1].dest_port="${private_port}"
         uci set firewall.@rule[-1].target='ACCEPT'
-        
-        # 3. 提交并重启防火墙
         uci commit firewall
-        service firewall restart
+        service firewall restart 2>/dev/null
+        log "防火墙规则已添加: Allow-${private_port}"
     fi
-
-    return $?
-}
-
-# 失败发送通知并退出程序
-function setup_failed() {
-    local failed_code="${1}"
-
-    sc_send 'Natmap 映射更新失败' "${@}"
-
-    shift 
-
-    exit "${failed_code}"
-}
-
-# 检查是否存在子域名配置，若不存在则仅通知并添加防火墙规则，然后直接退出脚本
-function redirect_domain_check() {
-    echo "redirect_domain_check: ${*}"
-    local public_ipv4="${1}"
-    local public_port="${2}"
-    local private_ipv4="${6}"
-    local protocol="${5}"
-    local private_port="${4}"
-
-    if [[ "${private_port}" == "" ]]; then
-        echo "private_port is NULL"
-        return 127
-    fi
-
-    declare sub_domain
-    sub_domain="$(uci -q get "natmap_callback.${private_port}")"
-
-    if [[ "${sub_domain}" == "" ]]; then
-    	sc_send 'Natmap 映射已更新' "${@}"
-    	firewall_rules_add "${@}" || setup_failed ${?} "${@}"
-	exit 0
-    fi
-
     return 0
 }
 
-function main() {
-    echo "main: ${*}"
-    redirect_domain_check "${@}" || setup_failed ${?} "${@}"
+# ==============================================================
+# 主函数
+# ==============================================================
+main() {
+    log_init
 
-    redirect_rule_setup "${@}" || setup_failed ${?} "${@}"
+    local public_ip="$1"
+    local public_port="$2"
+    local ipv6="$3"
+    local private_port="$4"
+    local protocol="$5"
+    local private_ip="$6"
 
-    firewall_rules_add "${@}" || setup_failed ${?} "${@}"
+    log "========== Natmap 回调触发 =========="
+    log "公网IP=${public_ip} 公网端口=${public_port} 协议=${protocol} 私网IP=${private_ip} 私网端口=${private_port}"
 
-    access_domain_dns_records_add "${@}" || setup_failed ${?} "${@}"
+    _firewall_allow "${private_port}"
 
-    # 成功发通知
-    sc_send 'Natmap 映射已更新' "${@}"
+    if ! _redirect_setup "${public_ip}" "${public_port}" "${ipv6}" "${private_port}" "${protocol}" "${private_ip}"; then
+        sc_send 'Natmap 映射更新失败' "${public_ip}" "${public_port}" "${private_ip}" "${private_port}" "${protocol}" "1"
+        return 1
+    fi
 
-    return $?
+    if [ -n "${REDIRECT_SUBDOMAIN}" ]; then
+        access_domain_dns_records_add "${public_ip}" "${public_port}" "${ipv6}" "${private_port}" "${protocol}" "${private_ip}" \
+            || log "DNS 记录更新失败"
+    fi
+
+    sc_send 'Natmap 映射已更新' "${public_ip}" "${public_port}" "${private_ip}" "${private_port}" "${protocol}" "0"
+
+    log "========== 完成 =========="
+    return 0
 }
 
-echo "---"
-echo "${@}"
-echo "---"
-
 main "${@}"
-
-set +x
-
 exit $?

@@ -1,129 +1,168 @@
 #!/bin/bash
+#
+#       * File     : natmap_callback_dns_record
+#       * Author   : sunowsir (rebuild with jshn)
+#       * Mail     : sunow.wang@gmail.com
+#       * Github   : github.com/sunowsir
 
 WORK_DIR="$(dirname "$(readlink -f "${0}")")"
+source /usr/share/libubox/jshn.sh
 source "${WORK_DIR}/natmap_callback.config"
 
-# Cloudflare DNS RECORD API URL
 CLOUDFLARE_DNS_API_URL="${CLOUDFLARE_API_URL}/dns_records"
 
-# 获取 DNS 记录信息
-function record_info_get() {
-    local sub_domain="${1}"
+# ==============================================================
+# API success 检查
+# 流程: json_cleanup → json_init → json_load → json_get_var → 判断
+# "success":true → let 设=1 → json_get_var 读到 "1" → [ "$ok" = "1" ] 成立 → return 0
+# "success":false → let 设=0 → json_get_var 读到 "0" → [ "$ok" = "1" ] 不成立 → return 1
+# ==============================================================
+_api_ok() {
+    local resp="$1"
+    json_cleanup
+    json_init
+    json_load "${resp}"
+    local ok
+    json_get_var ok success
+    [ "$ok" = "1" ] && return 0
+    return 1
+}
 
-    declare record_info
-    record_info="$(curl -s -X GET "${CLOUDFLARE_DNS_API_URL}?type=A&name=${sub_domain}" \
+# ==============================================================
+# DNS 记录查询
+# ==============================================================
+
+record_query() {
+    local sub_domain="$1"
+    curl -s -X GET "${CLOUDFLARE_DNS_API_URL}?type=A&name=${sub_domain}" \
         -H "Authorization: Bearer ${AUTH}" \
-        -H "Content-Type: application/json")"
-    echo "${record_info}"
+        -H "Content-Type: application/json"
 }
 
-# 获取 DNS 记录 ID
-function record_id_get() {
-    local record_info="${1}"
-    echo "${record_info}" | jq -r '.result[0].id'
+# ==============================================================
+# 用 jshn.sh 提取 result[0].field
+# 流程: json_load → json_select result → json_select 0 → json_get_var
+# ==============================================================
+
+record_id_from_json() {
+    local resp="$1"
+    json_cleanup
+    json_init
+    json_load "${resp}"
+    json_select result
+    [ $? -ne 0 ] && { json_cleanup; echo ""; return 1; }
+    json_select "0"
+    [ $? -ne 0 ] && { json_cleanup; echo ""; return 1; }
+    local id
+    json_get_var id id
+    json_cleanup
+    echo "${id}"
 }
 
-# 获取 DNS 记录 IP
-function record_ip_get() {
-    local record_info="${1}"
-    echo "${record_info}" | jq -r '.result[0].content'
+record_ip_from_json() {
+    local resp="$1"
+    json_cleanup
+    json_init
+    json_load "${resp}"
+    json_select result
+    [ $? -ne 0 ] && { json_cleanup; echo ""; return 1; }
+    json_select "0"
+    [ $? -ne 0 ] && { json_cleanup; echo ""; return 1; }
+    local ip
+    json_get_var ip content
+    json_cleanup
+    echo "${ip}"
 }
 
-# 新增 DNS 记录
-function record_add() {
-    local sub_domain="${1}"
-    local new_ipaddr="${2}"
+# ==============================================================
+# DNS 记录操作（带重试）
+# ==============================================================
 
-    # 添加 A 记录
-    response=$(curl -s -X POST "${CLOUDFLARE_DNS_API_URL}" \
-        -H "Authorization: Bearer ${AUTH}" \
-        -H "Content-Type: application/json" \
-        --data '{
-            "type": "A",
-            "name": "'"${sub_domain}"'",
-            "content": "'"${new_ipaddr}"'",
-            "proxied": true
-        }')
-    
-    # 解析 API 响应
-    local success=$(echo "${response}" | jq -r '.success')
-    
-    if [[ "${success}" != 'true' ]]; then
-        echo "添加 ${sub_domain} 的 A 记录失败: ${response}"
-        return 127
-    fi
-    
-    echo "成功添加 ${sub_domain} 的 A 记录为 ${new_ipaddr}"
-    return 0
+record_add() {
+    local sub_domain="$1"
+    local ipaddr="$2"
+    local resp i
+
+    for ((i = 0; i < ${RETRY_NUM:-3}; i++)); do
+        resp="$(curl -s -X POST "${CLOUDFLARE_DNS_API_URL}" \
+            -H "Authorization: Bearer ${AUTH}" \
+            -H "Content-Type: application/json" \
+            --data "{\"type\":\"A\",\"name\":\"${sub_domain}\",\"content\":\"${ipaddr}\",\"proxied\":true}")"
+
+        if _api_ok "${resp}"; then
+            echo "DNS: 已添加 A 记录 ${sub_domain} -> ${ipaddr}"
+            return 0
+        fi
+        echo "DNS: 添加记录失败（重试 ${i}）: ${resp}"
+    done
+    return 127
 }
 
-# 更新 DNS 记录
-function record_modify() {
-    local sub_domain="${1}"
-    local new_ipaddr="${2}"
-    local proxied="${3}"
+record_modify() {
+    local sub_domain="$1"
+    local ipaddr="$2"
+    local record_id="$3"
+    local resp i
 
-    if [[ "${proxied}" == "" ]]; then
-        proxied="true"
-    fi
+    for ((i = 0; i < ${RETRY_NUM:-3}; i++)); do
+        resp="$(curl -s -X PUT "${CLOUDFLARE_DNS_API_URL}/${record_id}" \
+            -H "Authorization: Bearer ${AUTH}" \
+            -H "Content-Type: application/json" \
+            --data "{\"type\":\"A\",\"name\":\"${sub_domain}\",\"content\":\"${ipaddr}\",\"proxied\":true}")"
 
-    declare record_info
-    declare record_id
-
-    record_info="$(record_info_get "${sub_domain}")"
-    record_id="$(record_id_get "${record_info}")"
-
-    # 更新 A 记录
-    response=$(curl -s -X PUT "${CLOUDFLARE_DNS_API_URL}/${record_id}" \
-        -H "Authorization: Bearer ${AUTH}" \
-        -H "Content-Type: application/json" \
-        --data '{
-          "type": "A",
-          "name": "'"${sub_domain}"'",
-          "content": "'"${new_ipaddr}"'",
-          "proxied": '"${proxied}"'
-        }')
-    
-    # 解析 API 响应
-    declare success
-    success=$(echo "${response}" | jq -r '.success')
-    
-    if [[ "${success}" != '' ]] && [[ "${success}" != 'true' ]]; then
-        echo "修改 A 记录失败: ${response}"
-        return 127
-    fi
-
-    echo "成功将 ${sub_domain} 的 A 记录修改为 ${new_ipaddr}"
-    return 0
+        if _api_ok "${resp}"; then
+            echo "DNS: 已修改 A 记录 ${sub_domain} -> ${ipaddr}"
+            return 0
+        fi
+        echo "DNS: 修改记录失败（重试 ${i}）: ${resp}"
+    done
+    return 127
 }
 
-function record_check() {
-    local sub_domain="${1}"
-    local new_ipaddr="${2}"
+record_upsert() {
+    local sub_domain="$1"
+    local ipaddr="$2"
+    local resp record_id current_ip
 
-    declare record_info
-    declare record_id
-    declare record_ip
+    resp="$(record_query "${sub_domain}")"
+    record_id="$(record_id_from_json "${resp}")"
 
-    record_info="$(record_info_get "${sub_domain}")"
-    record_id="$(record_id_get "${record_info}")"
-    record_ip="$(record_ip_get "${record_info}")"
-
-    # 如果找不到记录，则添加记录
-    if [[ "${record_id}" == "null" ]]; then
-        record_add "${sub_domain}" "${new_ipaddr}"
+    if [ -z "${record_id}" ]; then
+        record_add "${sub_domain}" "${ipaddr}"
         return $?
     fi
-    
-    echo "找到 DNS 记录 (ID: ${record_id})，当前 IP: ${record_ip}"
 
-    # 如果 IP 未变化，则不修改
-    if [[ "${record_ip}" == "${new_ipaddr}" ]]; then
-        echo "${sub_domain} 新 IP 与当前 IP 相同，无需修改"
+    current_ip="$(record_ip_from_json "${resp}")"
+    if [ "${current_ip}" = "${ipaddr}" ]; then
+        echo "DNS: ${sub_domain} 当前 IP=${ipaddr}，无需修改"
         return 0
     fi
 
-    record_modify "${sub_domain}" "${new_ipaddr}"
+    record_modify "${sub_domain}" "${ipaddr}" "${record_id}"
     return $?
 }
 
+# ==============================================================
+# 供 natmap_callback_main 调用的入口
+# ==============================================================
+access_domain_dns_records_add() {
+    local public_ip="$1"
+    local public_port="$2"
+    local ipv6="$3"
+    local private_port="$4"
+    local protocol="$5"
+    local private_ip="$6"
+
+    local sub_domain
+    sub_domain="$(uci -q get "natmap_callback.${private_port}")"
+
+    if [ -z "${sub_domain}" ]; then
+        echo "DNS: 未配置子域名 for port ${private_port}"
+        return 0
+    fi
+
+    local full_domain="${sub_domain}.${ROOT_DOMAIN}"
+    echo "DNS: 检查并更新 ${full_domain} -> ${public_ip}"
+    record_upsert "${full_domain}" "${public_ip}"
+    return $?
+}
