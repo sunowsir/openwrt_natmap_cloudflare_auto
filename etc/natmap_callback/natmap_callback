@@ -6,7 +6,7 @@
 #       * Github   : github.com/sunowsir
 
 WORK_DIR="$(dirname "$(readlink -f "${0}")")"
-source "${WORK_DIR}/natmap_callback.config"
+source "${WORK_DIR}/natmap_callback_config"
 
 mkdir -p "${LOGS_SAVE_DIR}"
 [[ ! -f "${LOG_FILE}" ]] && touch "${LOG_FILE}"
@@ -15,4 +15,4 @@ mkdir -p "${LOGS_SAVE_DIR}"
 [[ ${FILE_IDLE} -gt ${LOGS_SAVE_TIMES} ]] && \
     rm -rf "${LOG_FILE}"
 
-flock "${LOCK_FILE}" "${WORK_DIR}"/"${WORK_SH_FILE}" "${@}"
+flock "${LOCK_FILE}" "${WORK_DIR}"/"${WORK_SH_FILE}" "${@}" >> "${LOG_FILE}" 

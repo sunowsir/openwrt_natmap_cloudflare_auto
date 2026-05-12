@@ -10,7 +10,7 @@
 source /usr/share/libubox/jshn.sh
 
 WORK_DIR="$(dirname "$(readlink -f "${0}")")"
-source "${WORK_DIR}/natmap_callback.config"
+source "${WORK_DIR}/natmap_callback_config"
 source "${WORK_DIR}/natmap_callback_notify_push"
 
 # ==============================================================
@@ -85,8 +85,7 @@ function cf_get() {
     local url="$1"
     for ((i = 0; i < ${RETRY_NUM:-3}; i++)); do
         local resp
-        resp="$(curl -s -X GET "${url}" \
-            -H "Authorization: Bearer ${AUTH}" \
+        resp="$(curl -s -X GET "${url}" -H "Authorization: Bearer ${AUTH}" \
             -H "Content-Type: application/json")"
         if _cf_api_ok "${resp}"; then
             echo "${resp}"
@@ -102,14 +101,13 @@ function cf_put() {
     local data="$2"
     for ((i = 0; i < ${RETRY_NUM:-3}; i++)); do
         local resp
-        resp="$(curl -s -X PUT "${url}" \
-            -H "Authorization: Bearer ${AUTH}" \
+        resp="$(curl --connect-timeout "${CURL_CONN_TIMEOUT}" -s -X PUT "${url}" -H "Authorization: Bearer ${AUTH}" \
             -H "Content-Type: application/json" \
             --data "${data}")"
         if _cf_api_ok "${resp}"; then
-            echo "${resp}"
             return 0
         fi
+        log "[DEBUG] $(date) PUT failed, resp: ${resp}"
         log "API PUT 失败（重试 ${i}）"
     done
     return 1
