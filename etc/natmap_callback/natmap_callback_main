@@ -9,8 +9,7 @@ source /usr/share/libubox/jshn.sh
 
 WORK_DIR="$(dirname "$(readlink -f "${0}")")"
 source "${WORK_DIR}/natmap_callback_config"
-source "${WORK_DIR}/natmap_callback_notify_push"
-source "${WORK_DIR}/natmap_callback_dns_record"
+source "${WORK_DIR}/natmap_callback_ddns"
 source "${WORK_DIR}/natmap_callback_common"
 
 
@@ -101,7 +100,7 @@ function _redirect_setup() {
         return 0
     }
 
-    dns_records_check "${public_ip}" "${private_port}" || log "${sub_domain} DNS 记录更新失败"
+    natmap_callback_ddns "${public_ip}" "${private_port}" || log "${sub_domain} DNS 记录更新失败"
 
     local ACCESS_DOMAIN="${sub_domain}.${ROOT_DOMAIN}"
     log "开始设置转发规则: ACCESS_DOMAIN=${ACCESS_DOMAIN}, PORT=${public_port}"
@@ -110,7 +109,7 @@ function _redirect_setup() {
     zone_id="$(zone_id_from_json "$(zone_id_query)" )"
 
     for ((try = 0; try < ${RETRY_NUM:-3}; try++)); do
-        if cf_put "${CLOUDFLARE_API_URL}/${zone}/rulesets/${RULE}" "$(_new_rule_json)"; then
+        if cf_put "${CLOUDFLARE_API_URL}/${zone_id}/rulesets/${RULE}" "$(_new_rule_json)"; then
             log "规则推送成功"
             return 0
         fi
@@ -162,11 +161,11 @@ function main() {
     _firewall_allow "${private_port}"
 
     if ! _redirect_setup "${public_ip}" "${public_port}" "${private_port}"; then
-        _sc_send 'Natmap 映射更新失败' "${public_ip}" "${public_port}" "${private_ip}" "${private_port}" "${protocol}" "1"
+        sc_send 'Natmap 映射更新失败' "${public_ip}" "${public_port}" "${private_ip}" "${private_port}" "${protocol}" "1"
         return 1
     fi
 
-    _sc_send 'Natmap 映射已更新' "${public_ip}" "${public_port}" "${private_ip}" "${private_port}" "${protocol}" "0"
+    sc_send 'Natmap 映射已更新' "${public_ip}" "${public_port}" "${private_ip}" "${private_port}" "${protocol}" "0"
 
     log "========== 完成 =========="
     return 0

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-#       * File     : natmap_callback_dns_record
+#       * File     : natmap_callback_ddns
 #       * Author   : sunowsir (rebuild with jshn)
 #       * Mail     : sunow.wang@gmail.com
 #       * Github   : github.com/sunowsir
@@ -155,7 +155,7 @@ function record_upsert() {
 # ==============================================================
 # 供 natmap_callback_main 调用的入口
 # ==============================================================
-function dns_records_check() {
+function natmap_callback_ddns() {
     local public_ip="${1}"
     local private_port="${2}"
 
