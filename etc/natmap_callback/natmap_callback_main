@@ -90,8 +90,9 @@ function _new_rule_json() {
 # 重定向规则设置
 # ==============================================================
 function _redirect_setup() {
-    local public_port="$2"
-    local private_port="$4"
+    local public_ip="${1}"
+    local public_port="${2}"
+    local private_port="${3}"
 
     local sub_domain
     sub_domain="$(uci -q get "natmap_callback.${private_port}")"
@@ -100,11 +101,16 @@ function _redirect_setup() {
         return 0
     }
 
+    dns_records_check "${public_ip}" "${private_port}" || log "${sub_domain} DNS 记录更新失败"
+
     local ACCESS_DOMAIN="${sub_domain}.${ROOT_DOMAIN}"
     log "开始设置转发规则: ACCESS_DOMAIN=${ACCESS_DOMAIN}, PORT=${public_port}"
 
+    local zone_id
+    zone_id="$(zone_id_from_json "$(zone_id_query)" )"
+
     for ((try = 0; try < ${RETRY_NUM:-3}; try++)); do
-        if cf_put "${CLOUDFLARE_API_URL}/rulesets/${RULE}" "$(_new_rule_json)"; then
+        if cf_put "${CLOUDFLARE_API_URL}/${zone}/rulesets/${RULE}" "$(_new_rule_json)"; then
             log "规则推送成功"
             return 0
         fi
@@ -119,7 +125,7 @@ function _redirect_setup() {
 # 防火墙
 # ==============================================================
 function _firewall_allow() {
-    local private_port="$1"
+    local private_port="${1}"
     local fw_rule_name="Allow-${private_port}"
 
     if uci show firewall 2>/dev/null | grep -q "firewall.@rule\[.*\].name='${fw_rule_name}'"; then
@@ -142,28 +148,22 @@ function _firewall_allow() {
 # 主函数
 # ==============================================================
 function main() {
-    log_init
+    local public_ip="${1}"
+    local public_port="${2}"
+    local private_port="${4}"
+    local protocol="${5}"
+    local private_ip="${6}"
 
-    local public_ip="$1"
-    local public_port="$2"
-    local ipv6="$3"
-    local private_port="$4"
-    local protocol="$5"
-    local private_ip="$6"
+    log_init
 
     log "========== Natmap 回调触发 =========="
     log "公网IP=${public_ip} 公网端口=${public_port} 协议=${protocol} 私网IP=${private_ip} 私网端口=${private_port}"
 
     _firewall_allow "${private_port}"
 
-    if ! _redirect_setup "${public_ip}" "${public_port}" "${ipv6}" "${private_port}" "${protocol}" "${private_ip}"; then
+    if ! _redirect_setup "${public_ip}" "${public_port}" "${private_port}"; then
         _sc_send 'Natmap 映射更新失败' "${public_ip}" "${public_port}" "${private_ip}" "${private_port}" "${protocol}" "1"
         return 1
-    fi
-
-    if [[ -n "${REDIRECT_SUBDOMAIN}" ]]; then
-        access_domain_dns_records_add "${public_ip}" "${public_port}" "${ipv6}" "${private_port}" "${protocol}" "${private_ip}" \
-            || log "DNS 记录更新失败"
     fi
 
     _sc_send 'Natmap 映射已更新' "${public_ip}" "${public_port}" "${private_ip}" "${private_port}" "${protocol}" "0"

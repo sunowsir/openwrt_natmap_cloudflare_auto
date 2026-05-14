@@ -16,7 +16,7 @@ EMAIL="$(uci get natmap_callback.cloudflare.EMAIL)"
 
 RULE="$(uci get natmap_callback.cloudflare.RULE)"
 
-CLOUDFLARE_API_URL="$(uci get natmap_callback.cloudflare.CLOUDFLARE_API_URL)/${ZONE}"
+CLOUDFLARE_API_URL="$(uci get natmap_callback.cloudflare.CLOUDFLARE_API_URL)"
 
 ROOT_DOMAIN="$(uci get natmap_callback.cloudflare.ROOT_DOMAIN)"
 

@@ -112,3 +112,40 @@ function cf_put() {
     done
     return 1
 }
+
+# ==============================================================
+# Cloudflare API 请求 -- 获取ZONE ID, eg.  zone_id="$(zone_id_from_json "$(zone_id_query)" )"
+# ==============================================================
+
+function zone_id_query() {
+    cf_get "${CLOUDFLARE_API_URL}?name=${ROOT_DOMAIN}"
+    # curl -s -X GET "${CLOUDFLARE_API_URL}?name=${ROOT_DOMAIN}" \
+    #     -H "Authorization: Bearer ${AUTH}" \
+    #     -H "Content-Type: application/json"
+}
+
+function zone_id_from_json() {
+    local resp="$1"
+    json_cleanup
+    json_init
+    json_load "${resp}"
+
+    json_select "result" || {
+        json_cleanup  
+        return 1
+    }
+    json_select 1 || {
+        json_cleanup  
+        return 1
+    }
+
+
+    local zone_id
+    json_get_var zone_id "id"
+
+    json_select ..
+    json_select ..
+
+    echo "${zone_id}"
+    json_cleanup
+}
