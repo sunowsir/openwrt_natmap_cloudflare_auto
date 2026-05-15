@@ -144,9 +144,6 @@ function cf_put() {
 
 function zone_id_query() {
     cf_get "${CLOUDFLARE_API_URL}?name=${ROOT_DOMAIN}"
-    # curl -s -X GET "${CLOUDFLARE_API_URL}?name=${ROOT_DOMAIN}" \
-    #     -H "Authorization: Bearer ${AUTH}" \
-    #     -H "Content-Type: application/json"
 }
 
 function zone_id_from_json() {
@@ -163,7 +160,6 @@ function zone_id_from_json() {
         json_cleanup  
         return 1
     }
-
 
     local zone_id
     json_get_var zone_id "id"
