@@ -83,7 +83,7 @@ function record_add() {
     local access_domain="${1}"
     local ipaddr="${2}"
     local zone_id="${3}"
-    local proxied="${5}"
+    local proxied="${4}"
 
     for ((i = 0; i < ${RETRY_NUM:-3}; i++)); do
         local resp
