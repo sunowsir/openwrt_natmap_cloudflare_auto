@@ -143,17 +143,43 @@ function _firewall_allow() {
     return 0
 }
 
+function public_ip_check() {
+    local public_ip="${1}"
+
+    local ipip_net_pub_ip
+    ipip_net_pub_ip="$(curl -s myip.ipip.net | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')"
+
+    if [[ -z "${ipip_net_pub_ip}" ]]; then 
+        echo "${public_ip}"
+        log "curl myip.ipip.net 失败"
+        return 127
+    fi
+
+    if [[ "${public_ip}" != "${ipip_net_pub_ip}" ]];  then
+        log "natmap 获取公网IP信息错误: ipip.net: ${ipip_net_pub_ip}, natmap: ${public_ip}"
+    fi
+
+    echo "${ipip_net_pub_ip}"
+}
+
 # ==============================================================
 # 主函数
 # ==============================================================
 function main() {
-    local public_ip="${1}"
+    log_init
+
+    if [[ $# -ne 6 ]]; then 
+        log "[ERROR] natmap 参数个数小于6: $*"
+    fi
+
+    local public_ip
+    public_ip="$(public_ip_check "${1}")"
+
     local public_port="${2}"
     local private_port="${4}"
     local protocol="${5}"
     local private_ip="${6}"
 
-    log_init
 
     log "========== Natmap 回调触发 =========="
     log "公网IP=${public_ip} 公网端口=${public_port} 协议=${protocol} 私网IP=${private_ip} 私网端口=${private_port}"
