@@ -12,6 +12,7 @@ source /usr/share/libubox/jshn.sh
 WORK_DIR="$(dirname "$(readlink -f "${0}")")"
 source "${WORK_DIR}/natmap_callback_config"
 
+
 # ==============================================================
 # 日志
 # ==============================================================
@@ -61,10 +62,15 @@ function sc_send() {
     local protocol="${6}"
     local level="${7}"
 
+    if [[ -z "${SENDKEY}" ]]; then 
+        log "SENDKEY 未设置, 跳过推送"
+        return 0
+    fi
+
     if [[ "$(uci -q get "natmap_callback.${private_port}")" != "" ]] && 
        [[ ! $(uci -q get "natmap_callback.${private_port}.notify") ]] &&
        [[ ${level} -eq 0 ]]; then 
-        echo "通知已关闭, 跳过"
+        log "通知已关闭, 跳过"
         return 0
     fi
 
@@ -79,7 +85,7 @@ function sc_send() {
         return 127
     fi
 
-    log "推送成功"
+    log "信息推送成功"
 
     return 0
 }
@@ -93,13 +99,18 @@ function sc_send() {
 # ==============================================================
 function _cf_api_ok() {
     local resp="$1"
+    if [[ -z "${resp}" ]]; then 
+        log "resp 为空"
+        return 127
+    fi
+
     json_cleanup
     json_init
     json_load "${resp}"
     local ok
     json_get_var ok success
     [[ ${ok} -eq 1 ]] && return 0
-    return 1
+    return 127
 }
 
 # ==============================================================
@@ -108,6 +119,11 @@ function _cf_api_ok() {
 
 function cf_get() {
     local url="$1"
+    if [[ -z "${url}" ]]; then 
+        log "url 为空"
+        return 127
+    fi
+
     for ((i = 0; i < ${RETRY_NUM:-3}; i++)); do
         local resp
         resp="$(curl -s -X GET "${url}" -H "Authorization: Bearer ${AUTH}" \
@@ -116,14 +132,27 @@ function cf_get() {
             echo "${resp}"
             return 0
         fi
-        log "API GET 失败, 重试 ${i}"
+        log "[DEBUG] GET 失败, resp: ${resp}, 重试"
+        sleep 1
     done
-    return 1
+
+    log "API GET 失败"
+    return 127
 }
 
 function cf_put() {
     local url="$1"
+    if [[ -z "${url}" ]]; then 
+        log "url 为空"
+        return 127
+    fi
+
     local data="$2"
+    if [[ -z "${data}" ]]; then 
+        log "data 为空"
+        return 127
+    fi
+    
     for ((i = 0; i < ${RETRY_NUM:-3}; i++)); do
         local resp
         resp="$(curl --connect-timeout "${CURL_CONN_TIMEOUT}" -s -X PUT "${url}" -H "Authorization: Bearer ${AUTH}" \
@@ -132,10 +161,12 @@ function cf_put() {
         if _cf_api_ok "${resp}"; then
             return 0
         fi
-        log "[DEBUG] $(date) PUT failed, resp: ${resp}"
-        log "API PUT 失败（重试 ${i}）"
+        log "[DEBUG] ${data} PUT 失败, resp: ${resp}, 重试"
+        sleep 1
     done
-    return 1
+
+    log "API PUT 失败"
+    return 127
 }
 
 # ==============================================================
@@ -144,21 +175,27 @@ function cf_put() {
 
 function zone_id_query() {
     cf_get "${CLOUDFLARE_API_URL}?name=${ROOT_DOMAIN}"
+    return $?
 }
 
 function zone_id_from_json() {
     local resp="$1"
+    if [[ -z "${resp}" ]]; then 
+        log "resp 为空"
+        return 127
+    fi
+
     json_cleanup
     json_init
     json_load "${resp}"
 
     json_select "result" || {
         json_cleanup  
-        return 1
+        return 127
     }
     json_select 1 || {
         json_cleanup  
-        return 1
+        return 127
     }
 
     local zone_id

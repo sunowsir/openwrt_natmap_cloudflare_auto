@@ -30,6 +30,9 @@ config natmap_callback 'cloudflare'
     option LOGS_SAVE_DIR '/var/log/'
     # 日志文件名
     option LOGS_FILENAME 'natmap_callback.log'
+    # 重定向方法 301/302/307/308
+    option STATUS_CODE  308
+
 
 # 单引号中填写natmap配置文件/etc/config/natmap中的：
 # option port '20809' 配置项目中的端口号，

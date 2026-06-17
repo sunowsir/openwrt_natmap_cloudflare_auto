@@ -19,8 +19,23 @@ source "${WORK_DIR}/natmap_callback_common"
 function _new_rule_json() {
     local final_list=""
 
+    local wait_time=${WAIT_TIMEOUT}
+    while [[ "$(ls ${NATMAP_RUNNING_FILE} 2>/dev/null)" == "" ]] && [[ $(( wait_time-- )) -gt 0 ]]; 
+    do
+        sleep 1
+    done
+
+    if [[ "$(ls ${NATMAP_RUNNING_FILE} 2>/dev/null)" == "" ]]; then 
+        log "${NATMAP_RUNNING_FILE} 不存在, 退出执行"
+        exit 127
+    fi
+
     for raw_f in ${NATMAP_RUNNING_FILE}; do
         raw_str=$(cat "${raw_f}")
+
+        local p 
+        local ip
+
         # 1. 解析当前的单个 JSON 字符串
         json_load "${raw_str}"
         json_get_var p port
@@ -61,11 +76,11 @@ function _new_rule_json() {
 
                 json_add_object "from_value"
 
-                    json_add_int "status_code" 301
+                    json_add_int "status_code" "${STATUS_CODE}"
                     json_add_boolean "preserve_query_string" 1
 
                     json_add_object "target_url"
-                        json_add_string "expression" "wildcard_replace(http.request.full_uri, r\"http*://${access_domain}/*\", r\"https://${redirect_domain}/\${2}\")"
+                        json_add_string "expression" "wildcard_replace(http.request.full_uri, r\"https://${access_domain}/*\", r\"https://${redirect_domain}/\${1}\")"
                     json_close_object
 
                 json_close_object
@@ -73,7 +88,7 @@ function _new_rule_json() {
             json_close_object
 
             json_add_string "description" "${rule_name}" 
-            json_add_string "expression" "(http.request.full_uri wildcard r\"http*://${access_domain}/*\")"
+            json_add_string "expression" "(http.request.full_uri wildcard r\"https://${access_domain}/*\")"
 
         json_close_object
 
@@ -117,7 +132,7 @@ function _redirect_setup() {
         log "规则提交失败, 重试 ${try}"
     done
 
-    return 1
+    return 127
 }
 
 # ==============================================================
@@ -188,7 +203,7 @@ function main() {
 
     if ! _redirect_setup "${public_ip}" "${public_port}" "${private_port}"; then
         sc_send 'Natmap 映射更新失败' "${public_ip}" "${public_port}" "${private_ip}" "${private_port}" "${protocol}" "1"
-        return 1
+        return 127
     fi
 
     sc_send 'Natmap 映射已更新' "${public_ip}" "${public_port}" "${private_ip}" "${private_port}" "${protocol}" "0"

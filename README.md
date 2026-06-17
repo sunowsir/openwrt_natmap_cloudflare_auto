@@ -26,6 +26,7 @@
         option enable '1'
 
     ```
+    7. 如需测试，可以手动执行脚本，例如: `/bin/bash /etc/natmap_callback/natmap_callback 4.3.2.1 2345 2001::1 1234 tcp 1.2.3.4`
 
 ---
 
